@@ -1,0 +1,10 @@
+{
+  "now": 1000,
+  "cost": 4,
+  "chain": ["tenant_quota", "api_qps", "user_quota"],
+  "buckets": [
+    {"id": "tenant_quota", "capacity": 100, "refill_rate": 10, "balance": 96},
+    {"id": "api_qps", "capacity": 5, "refill_rate": 5, "balance": 1},
+    {"id": "user_quota", "capacity": 20, "refill_rate": 1, "balance": 2}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "policies": [
+    {"id": "p10", "anchor": 0, "period_seconds": 10, "allowance": 10, "carry_cap": 5},
+    {"id": "p7",  "anchor": 0, "period_seconds": 7,  "allowance": 7,  "carry_cap": 3}
+  ],
+  "requests": [
+    {"id": "r1", "timestamp": 0,  "cost": 4, "policy_refs": ["p10", "p7"]},
+    {"id": "r2", "timestamp": 0,  "cost": 4, "policy_refs": ["p10", "p7"]},
+    {"id": "r3", "timestamp": 9,  "cost": 4, "policy_refs": ["p10", "p7"]},
+    {"id": "r4", "timestamp": 10, "cost": 4, "policy_refs": ["p10", "p7"]},
+    {"id": "r5", "timestamp": 10, "cost": 7, "policy_refs": ["p10"]}
+  ]
+}

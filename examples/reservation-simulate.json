@@ -1,0 +1,13 @@
+{
+  "buckets": [
+    {"id": "room_a", "capacity": 2},
+    {"id": "room_b", "capacity": 1}
+  ],
+  "reservations": [
+    {"start": 0, "end": 3, "cost": 1, "chain": ["room_a", "room_b"]},
+    {"start": 2, "end": 5, "cost": 1, "chain": ["room_a", "room_b"]},
+    {"start": 5, "end": 8, "cost": 1, "chain": ["room_a"]},
+    {"start": 6, "end": 7, "cost": 1, "chain": ["room_a"]},
+    {"start": 7, "end": 9, "cost": 1, "chain": ["room_a", "room_b"]}
+  ]
+}

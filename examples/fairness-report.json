@@ -1,0 +1,13 @@
+{
+  "buckets": [
+    {"id": "shared_qps", "capacity": 4, "refill_rate": 1, "initial": 4}
+  ],
+  "requests": [
+    {"id": "req-1", "timestamp": 0, "cost": 3, "chain": ["shared_qps"], "principal": "alpha", "weight": 1},
+    {"id": "req-2", "timestamp": 0, "cost": 3, "chain": ["shared_qps"], "principal": "beta", "weight": 1},
+    {"id": "req-3", "timestamp": 1, "cost": 3, "chain": ["shared_qps"], "principal": "beta", "weight": 1},
+    {"id": "req-4", "timestamp": 5, "cost": 2, "chain": ["shared_qps"], "principal": "alpha", "weight": 1},
+    {"id": "req-5", "timestamp": 5, "cost": 2, "chain": ["shared_qps"], "principal": "beta", "weight": 1}
+  ],
+  "window_seconds": 5
+}

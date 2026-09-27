@@ -1,0 +1,13 @@
+{
+  "policies": [
+    {"id": "per_second", "window_seconds": 1, "limit": 10},
+    {"id": "per_minute", "window_seconds": 60, "limit": 15}
+  ],
+  "requests": [
+    {"id": "r1", "timestamp": 0, "principal": "alpha", "cost": 6, "policy_refs": ["per_second", "per_minute"]},
+    {"id": "r2", "timestamp": 0, "principal": "alpha", "cost": 6, "policy_refs": ["per_second", "per_minute"]},
+    {"id": "r3", "timestamp": 1, "principal": "alpha", "cost": 6, "policy_refs": ["per_second", "per_minute"]},
+    {"id": "r4", "timestamp": 1, "principal": "alpha", "cost": 4, "policy_refs": ["per_minute"]},
+    {"id": "r5", "timestamp": 2, "principal": "beta", "cost": 9, "policy_refs": ["per_second"]}
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "buckets": [
+    {"id": "chain_a_api", "capacity": 10, "refill_rate": 1, "initial": 10},
+    {"id": "chain_b_api", "capacity": 10, "refill_rate": 1, "initial": 6},
+    {"id": "shared_db", "capacity": 4, "refill_rate": 0.5, "initial": 4}
+  ],
+  "requests": [
+    {"id": "r1", "timestamp": 0, "cost": 4, "chains": [["chain_a_api", "shared_db"], ["chain_b_api"]]},
+    {"id": "r2", "timestamp": 0, "cost": 3, "chains": [["chain_b_api"], ["chain_a_api"]]},
+    {"id": "r3", "timestamp": 2, "cost": 4, "chains": [["chain_a_api", "shared_db"], ["chain_b_api"]]},
+    {"id": "r4", "timestamp": 3, "cost": 2, "chains": [["chain_b_api"], ["chain_a_api", "shared_db"]]},
+    {"id": "r5", "timestamp": 4, "cost": 5, "chains": [["chain_a_api"], ["chain_b_api"]]},
+    {"id": "r6", "timestamp": 5, "cost": 6, "chains": [["chain_a_api"], ["chain_b_api"], ["chain_a_api", "shared_db"]]}
+  ]
+}
