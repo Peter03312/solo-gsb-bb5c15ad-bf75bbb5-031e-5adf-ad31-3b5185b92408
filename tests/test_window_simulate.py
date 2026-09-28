@@ -125,6 +125,71 @@ def test_event_just_inside_left_edge_is_active():
     assert resp.results[1].rejected_by == "P"
 
 
+def test_event_half_ulp_inside_left_edge_still_occupies():
+    # 9.9999999995 与左边界 0 的差严格小于 10（差 5e-10，旧实现的固定
+    # 容差 EPS=1e-9 会把该事件当成已过期而错误放行）；按输入十进制值
+    # 精确判定，事件仍在 (0, 9.9999999995] 窗口内并占满额度 -> 拒绝
+    resp = _run(
+        [{"id": "P", "window_seconds": 10, "limit": 10}],
+        [
+            {"id": "r1", "timestamp": 0, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+            {"id": "r2", "timestamp": 9.9999999995, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+        ],
+    )
+    r2 = resp.results[1]
+    assert r2.allowed is False
+    assert r2.rejected_by == "P"
+    v = _view(r2, "P")
+    assert v.used_before == 10
+    assert v.used_after == 10  # 拒绝不改账
+    assert v.remaining_before == 0
+    rej = r2.rejection
+    assert (rej.used, rej.cost, rej.required, rej.available) == (10, 10, 20, 0)
+    # 终态仍沿用同一过期规则：旧事件未过期，占用保持 10
+    p = resp.policies[0]
+    assert p.total_used == 10
+    assert p.principals[0].event_count == 1
+    # 输出按既有精度规则保留 9 位小数
+    assert (p.window.start, p.window.end) == (round(9.9999999995 - 10, 9),
+                                               round(9.9999999995, 9))
+
+
+def test_event_just_inside_edge_frees_exactly_at_boundary():
+    # 紧邻边界的事件继续占额；时间再推进 5e-10 到 t=10（恰在左边界）才过期
+    resp = _run(
+        [{"id": "P", "window_seconds": 10, "limit": 10}],
+        [
+            {"id": "r1", "timestamp": 0, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+            {"id": "r2", "timestamp": 9.9999999995, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+            {"id": "r3", "timestamp": 10, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+        ],
+    )
+    assert [r.allowed for r in resp.results] == [True, False, True]
+    assert _view(resp.results[2], "P").used_before == 0
+
+
+def test_non_integer_window_boundary_is_exact_decimal():
+    # 非整数窗口宽度：左边界 = 0.3 - 0.1 - 0.2 = 0（十进制精确），
+    # t=0 的事件恰在边界上必须过期，不能因二进制浮点误差提前/延后
+    resp = _run(
+        [{"id": "P", "window_seconds": 0.3, "limit": 10}],
+        [
+            {"id": "r1", "timestamp": 0, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+            {"id": "r2", "timestamp": 0.2999999999, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+            {"id": "r3", "timestamp": 0.3, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+        ],
+    )
+    assert [r.allowed for r in resp.results] == [True, False, True]
+
+
 def test_sliding_window_capacity_freed_at_boundary():
     # 独立、语义清晰的版本：t=5 的事件在 t=15 过期
     resp = _run(
@@ -262,6 +327,70 @@ def test_independent_window_seconds_per_policy():
     assert resp.results[1].rejected_by == "Pmin"
     assert _view(resp.results[1], "Psec").used_before == 0
     assert _view(resp.results[1], "Pmin").used_before == 8
+
+
+def test_multi_policy_decimal_boundary_atomic_rejection():
+    # 两策略窗口均为 10：t=9.9999999995 时两策略的 t=0 事件都紧邻左边界
+    # 但仍在窗口内（各占 10）。任一策略都放不下 cost 1，整笔必须原子
+    # 拒绝——任一策略都不得写入本次事件；首个超限策略按 refs 顺序为 P1。
+    resp = _run(
+        [
+            {"id": "P1", "window_seconds": 10, "limit": 10},
+            {"id": "P2", "window_seconds": 10, "limit": 10},
+        ],
+        [
+            {"id": "r1", "timestamp": 0, "principal": "a", "cost": 10,
+             "policy_refs": ["P1", "P2"]},
+            {"id": "r2", "timestamp": 9.9999999995, "principal": "a", "cost": 1,
+             "policy_refs": ["P1", "P2"]},
+        ],
+    )
+    r2 = resp.results[1]
+    assert r2.allowed is False
+    assert r2.rejected_by == "P1"
+    assert _view(r2, "P1").used_before == 10
+    assert _view(r2, "P2").used_before == 10
+    assert _view(r2, "P1").used_after == 10
+    assert _view(r2, "P2").used_after == 10
+    # 终态：两策略都只有 r1 的一笔事件，r2 未留下任何痕迹
+    states = {p.id: p for p in resp.policies}
+    assert states["P1"].total_used == 10
+    assert states["P2"].total_used == 10
+    assert states["P1"].principals[0].event_count == 1
+    assert states["P2"].principals[0].event_count == 1
+
+
+def test_multi_policy_mixed_boundary_decimal_occupancy():
+    # 同一时刻 t=9.999999：P1（w=10）左边界为 -0.000001，t=0 事件紧邻
+    # 其左边界但仍在窗口内，占用 10 放不下；P2（w=9.999999）左边界恰为
+    # 0，t=0 事件恰在边界已过期、占用 0，足以接纳 cost 5。按各策略自己
+    # 的 window_seconds 十进制判定后，P1 超限 -> 整笔原子拒绝，P2 也不
+    # 得写入。（窗口宽度差取 1e-6，落在 float 可分辨范围内。）
+    resp = _run(
+        [
+            {"id": "P1", "window_seconds": 10, "limit": 10},
+            {"id": "P2", "window_seconds": 9.999999, "limit": 10},
+        ],
+        [
+            {"id": "r1", "timestamp": 0, "principal": "a", "cost": 10,
+             "policy_refs": ["P1", "P2"]},
+            {"id": "r2", "timestamp": 9.999999, "principal": "a", "cost": 5,
+             "policy_refs": ["P1", "P2"]},
+        ],
+    )
+    r2 = resp.results[1]
+    assert r2.allowed is False
+    assert r2.rejected_by == "P1"
+    assert _view(r2, "P1").used_before == 10
+    assert _view(r2, "P2").used_before == 0
+    # 原子性：即便 P2 有额度也不记账
+    assert _view(r2, "P2").used_after == 0
+    states = {p.id: p for p in resp.policies}
+    # 终态观察时刻同为 9.999999：P1 的 t=0 事件仍在窗内，P2 的恰在边界已过期
+    assert states["P1"].total_used == 10
+    assert states["P1"].principals[0].event_count == 1
+    assert states["P2"].total_used == 0
+    assert states["P2"].principals == []
 
 
 # ---------- 排序与终态 ----------
