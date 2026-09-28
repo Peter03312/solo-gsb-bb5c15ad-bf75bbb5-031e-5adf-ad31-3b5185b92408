@@ -125,6 +125,78 @@ def test_event_just_inside_left_edge_is_active():
     assert resp.results[1].rejected_by == "P"
 
 
+def test_event_sub_nanosecond_inside_left_edge_still_occupies():
+    # 问题用例：距左边界仅 5e-10（小于旧固定容差 1e-9）但仍在窗口内，
+    # 事件必须继续占用额度：t=0 的 cost 10 未过期，再消费 10 必须拒绝。
+    resp = _run(
+        [{"id": "P", "window_seconds": 10, "limit": 10}],
+        [
+            {"id": "r1", "timestamp": 0, "principal": "a", "cost": 10, "policy_refs": ["P"]},
+            {"id": "r2", "timestamp": 9.9999999995, "principal": "a", "cost": 10,
+             "policy_refs": ["P"]},
+        ],
+    )
+    r2 = resp.results[1]
+    assert r2.allowed is False
+    assert r2.rejected_by == "P"
+    view = _view(r2, "P")
+    assert view.used_before == 10
+    assert view.used_after == 10  # 拒绝不改账
+    # 窗口边界仍按既有 9 位精度输出；占用判定本身使用未舍入的输入十进制值
+    assert (view.window.start, view.window.end) == (-1e-9, 9.999999999)
+    rej = r2.rejection
+    assert (rej.used, rej.cost, rej.required, rej.available) == (10, 10, 20, 0)
+    # 终态沿用同一过期规则：t=0 事件相对 t=9.9999999995 仍未过期
+    p = resp.policies[0]
+    assert p.total_used == 10
+    assert p.principals[0].event_count == 1
+
+
+def test_decimal_window_width_exact_boundary_expires():
+    # 窗口宽度是二进制浮点无法精确表示的 0.1：t=0.1 时 t=0 的事件恰在
+    # 左边界，按输入十进制值精确判定为已过期，used_before=0 放行。
+    resp = _run(
+        [{"id": "P", "window_seconds": 0.1, "limit": 10}],
+        [
+            {"id": "r1", "timestamp": 0, "principal": "a", "cost": 10, "policy_refs": ["P"]},
+            {"id": "r2", "timestamp": 0.1, "principal": "a", "cost": 10, "policy_refs": ["P"]},
+        ],
+    )
+    assert all(r.allowed for r in resp.results)
+    assert _view(resp.results[1], "P").used_before == 0
+    assert (_view(resp.results[1], "P").window.start,
+            _view(resp.results[1], "P").window.end) == (0, 0.1)
+
+
+def test_each_policy_judged_by_own_decimal_boundary_atomically():
+    # P1 窗口 10、P2 窗口 20：t=10.0000000001 时，t=0 事件对 P1 已过期
+    # （0 <= 1e-10），对 P2 仍在窗口内（0 > -9.9999999999）。
+    # P2 占用 10 不满足 cost 5 -> 拒绝；原子性要求 P1 也不写入。
+    resp = _run(
+        [
+            {"id": "P1", "window_seconds": 10, "limit": 10},
+            {"id": "P2", "window_seconds": 20, "limit": 10},
+        ],
+        [
+            {"id": "r1", "timestamp": 0, "principal": "a", "cost": 10,
+             "policy_refs": ["P1", "P2"]},
+            {"id": "r2", "timestamp": 10.0000000001, "principal": "a", "cost": 5,
+             "policy_refs": ["P1", "P2"]},
+        ],
+    )
+    r2 = resp.results[1]
+    assert r2.allowed is False
+    assert r2.rejected_by == "P2"
+    assert _view(r2, "P1").used_before == 0
+    assert _view(r2, "P2").used_before == 10
+    states = {p.id: p for p in resp.policies}
+    # P1 的 t=0 事件已在判定时过期；P2 保留 r1，r2 未写入任何策略
+    assert states["P1"].total_used == 0
+    assert states["P1"].principals == []
+    assert states["P2"].total_used == 10
+    assert states["P2"].principals[0].event_count == 1
+
+
 def test_sliding_window_capacity_freed_at_boundary():
     # 独立、语义清晰的版本：t=5 的事件在 t=15 过期
     resp = _run(
